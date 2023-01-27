@@ -1,0 +1,74 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.2.32526.322
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OneFactorSimulation", "OneFactorSimulation\OneFactorSimulation.vcxproj", "{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HullWhiteCalibration", "HullWhiteCalibration\HullWhiteCalibration.vcxproj", "{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "utils", "utils", "{B43437AF-B0BC-41F0-B5F6-DF4761FF01E0}"
+	ProjectSection(SolutionItems) = preProject
+		utils\backward-induction.hpp = utils\backward-induction.hpp
+		utils\black_model_calibrator.hpp = utils\black_model_calibrator.hpp
+		utils\calibration_helpers.hpp = utils\calibration_helpers.hpp
+		utils\console.hpp = utils\console.hpp
+		utils\discretizedbonds.hpp = utils\discretizedbonds.hpp
+		utils\enum_helper.h = utils\enum_helper.h
+		utils\flat_rate_shocker.hpp = utils\flat_rate_shocker.hpp
+		utils\ghw_tie_up.hpp = utils\ghw_tie_up.hpp
+		utils\hullwhite_hack.hpp = utils\hullwhite_hack.hpp
+		utils\hull_white_params.hpp = utils\hull_white_params.hpp
+		utils\interest_rate.hpp = utils\interest_rate.hpp
+		utils\irp_simulation.hpp = utils\irp_simulation.hpp
+		utils\json_io.h = utils\json_io.h
+		utils\market_rate.hpp = utils\market_rate.hpp
+		utils\misc.h = utils\misc.h
+		utils\model_type.hpp = utils\model_type.hpp
+		utils\one_factor_affine_calc.hpp = utils\one_factor_affine_calc.hpp
+		utils\one_factor_affine_like_hack.hpp = utils\one_factor_affine_like_hack.hpp
+		utils\paths.hpp = utils\paths.hpp
+		utils\paths_utils.hpp = utils\paths_utils.hpp
+		utils\quant_type.hpp = utils\quant_type.hpp
+		utils\short_rate_calibration.hpp = utils\short_rate_calibration.hpp
+		utils\short_rate_tree_adaptor.hpp = utils\short_rate_tree_adaptor.hpp
+		utils\simulation_verification.hpp = utils\simulation_verification.hpp
+		utils\string.h = utils\string.h
+		utils\text_file_reader.h = utils\text_file_reader.h
+		utils\types.h = utils\types.h
+		utils\utilities.h = utils\utilities.h
+		utils\zv_calculators.hpp = utils\zv_calculators.hpp
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Debug|x64.ActiveCfg = Debug|x64
+		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Debug|x64.Build.0 = Debug|x64
+		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Debug|x86.ActiveCfg = Debug|Win32
+		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Debug|x86.Build.0 = Debug|Win32
+		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Release|x64.ActiveCfg = Release|x64
+		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Release|x64.Build.0 = Release|x64
+		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Release|x86.ActiveCfg = Release|Win32
+		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Release|x86.Build.0 = Release|Win32
+		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Debug|x64.ActiveCfg = Debug|x64
+		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Debug|x64.Build.0 = Debug|x64
+		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Debug|x86.ActiveCfg = Debug|Win32
+		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Debug|x86.Build.0 = Debug|Win32
+		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Release|x64.ActiveCfg = Release|x64
+		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Release|x64.Build.0 = Release|x64
+		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Release|x86.ActiveCfg = Release|Win32
+		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {C3EA8C85-2287-4F18-8ED2-AB9FFE3E2209}
+	EndGlobalSection
+EndGlobal
