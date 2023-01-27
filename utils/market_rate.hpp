@@ -1,3 +1,17 @@
+/*
+ Copyright (C) 2022 QLHWrapper
+
+ This file is part of QLHWrapper, a free-software/open-source library
+ for financial quantitative analysts and developers
+
+ QLHWrapper is free software: you can redistribute it and/or modify it
+ under the terms of the The 2-Clause BSD License license - https://opensource.org/licenses/BSD-2-Clause.
+
+ This program is distributed in the hope that it will be useful, but WITHOUT
+ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE.  See the license for more details.
+*/
+
 #pragma once
 
 #define ATTR_SET ".<xmlattr>"
@@ -79,7 +93,20 @@ namespace utils {
             static boost::property_tree::ptree t;
             return t;
         }
+        static std::string defaultMRXMLFolder() {
+            return "\\\\cerbdata09\\polypath_data$\\Data\\daily\\alib";
+        }
+        static std::string defaultMRXMLFilename(const QuantLib::Date& date) {
+            std::ostringstream os;
+            os << utils::DateHelper<char>::to_yyyymmdd(date) << "_unch_1.xml";
+            return os.str();
+        }
     public:
+        static std::string defaultMRXMLFilePath(const QuantLib::Date& date) {
+            std::ostringstream os;
+            os << defaultMRXMLFolder() << "\\" << defaultMRXMLFilename(date);
+            return os.str();
+        }
         MarketRate(const QuantLib::Date& date) : date_(date) {}
         const QuantLib::Date& date() const {
             return date_;
@@ -90,8 +117,9 @@ namespace utils {
         boost::property_tree::ptree& root() {
             return pt_root_;
         }
-        MarketRate& load(const std::string& mr_xml) {
-            boost::property_tree::read_xml(mr_xml, pt_root_);
+        MarketRate& load(const std::string& mr_xml = "") {
+            auto filename = (mr_xml == "" ? defaultMRXMLFilePath(date()) : mr_xml);
+            boost::property_tree::read_xml(filename, pt_root_);
             return *this;
         }
     private:
@@ -266,7 +294,7 @@ namespace utils {
             auto const& dfs = std::get<2>(res);
             QuantLib::ext::shared_ptr<QuantLib::YieldTermStructure> yc(new QuantLib::InterpolatedDiscountCurve<QuantLib::Linear>(dates, dfs, dayCounter30360));
             QL_ASSERT(yc->referenceDate() == curveRefDate, "curve's reference is not what's expected");
-            yc->allowsExtrapolation();
+            yc->enableExtrapolation();
             return yc;
         }
 
