@@ -1,4 +1,4 @@
-#### QLHWrapper
+# QLHWrapper
 
 The projects in this solution are all QuantLib/Boost based. They are:
 
