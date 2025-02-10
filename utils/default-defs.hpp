@@ -14,11 +14,8 @@
 
 #pragma once
 
-namespace utils {
-    enum ModelType {
-        HullWhite1F = 0,
-        GeneralizedHullWhite1F = 1,
-        GeneralizedHullWhiteLogNormal1F = 2,
-        G2 = 3,
-    };
-}
+#define DEFAULT_MODEL "hw"
+#define DEFAULT_GRID_FREQ (12)  // monthly
+#define DEFAULT_MATURITY (50.0) // 50 years
+#define DEFAULT_IS_SOFR (true)
+#define DEFAULT_SILENT (false)

@@ -1,7 +1,22 @@
+/*
+ Copyright (C) 2022 QLHWrapper
+
+ This file is part of QLHWrapper, a free-software/open-source library
+ for financial quantitative analysts and developers
+
+ QLHWrapper is free software: you can redistribute it and/or modify it
+ under the terms of the The 2-Clause BSD License license - https://opensource.org/licenses/BSD-2-Clause.
+
+ This program is distributed in the hope that it will be useful, but WITHOUT
+ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE.  See the license for more details.
+*/
+
 #pragma once
 
 #include <ql/quantlib.hpp>
 #include <vector>
+#include <functional>
 
 namespace utils {
     // class to "hack" A(t, T), B(t, T) out of the class HullWhite
@@ -29,10 +44,10 @@ namespace utils {
             const std::vector<QuantLib::Date>& volstructure,
             const std::vector<QuantLib::Real>& speed,
             const std::vector<QuantLib::Real>& vol,
-            const QuantLib::ext::function<QuantLib::Real(QuantLib::Real)>& f =
-            QuantLib::ext::function<QuantLib::Real(QuantLib::Real)>(),
-            const QuantLib::ext::function<QuantLib::Real(QuantLib::Real)>& fInverse =
-            QuantLib::ext::function<QuantLib::Real(QuantLib::Real)>())
+            const std::function<QuantLib::Real(QuantLib::Real)>& f =
+            std::function<QuantLib::Real(QuantLib::Real)>(),
+            const std::function<QuantLib::Real(QuantLib::Real)>& fInverse =
+            std::function<QuantLib::Real(QuantLib::Real)>())
             : QuantLib::GeneralizedHullWhite(
                 yieldtermStructure,
                 speedstructure,

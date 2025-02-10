@@ -12,6 +12,7 @@
  FOR A PARTICULAR PURPOSE.  See the license for more details.
 */
 
+#define BOOST_LIB_DIAGNOSTIC
 #include <iostream>
 #include <boost/config.hpp>
 #include <ql/quantlib.hpp>
@@ -20,11 +21,6 @@
 #include <map>
 #include <chrono>
 #include <output.hpp>
-
-// auto link with the correct QuantLib libraries
-#ifdef BOOST_MSVC
-#include <ql/auto_link.hpp>
-#endif
 
 #include <boost/program_options.hpp>
 // auto link with the correct boost libraries
@@ -61,60 +57,102 @@ static std::shared_ptr<ShortRateModelParams> instantiateModelParams(
 }
 
 static std::pair<std::shared_ptr<utils::Paths>, std::shared_ptr<utils::Paths>> getSimpleRatePaths(
-    QuantLib::Natural tenorMonths,
+    Natural tenorMonths,
+    const DayCounter& cashRateDayCounter,
     const utils::Paths& adj_B,
-    const QuantLib::Date& evalDate = QuantLib::Date()
+    const Date& evalDate = Date()
 ) {
-    auto referenceDate = (evalDate == QuantLib::Date() ? QuantLib::Settings::instance().evaluationDate() : evalDate);
-    auto tenorTime = (QuantLib::Time)tenorMonths / 12.0;
+    auto referenceDate = (evalDate == Date() ? Settings::instance().evaluationDate() : evalDate);
+    auto tenorTime = (Time)tenorMonths / 12.0;
     auto nTimes = adj_B.nTimes();
     auto nPaths = adj_B.nPaths();
     auto const& timeGrid = *(adj_B.timeGrid());
-    QuantLib::DayCounter act360 = QuantLib::Actual360();
     std::shared_ptr<utils::Paths> pSimpleFwdPaths(new utils::Paths(nTimes, nPaths, adj_B.timeGrid()));
-    std::shared_ptr<utils::Paths> pAct360FwdPaths(new utils::Paths(nTimes, nPaths, adj_B.timeGrid()));
+    std::shared_ptr<utils::Paths> pCashRateFwdPaths(new utils::Paths(nTimes, nPaths, adj_B.timeGrid()));
     auto const& B_adj = *(adj_B.matrix());
     auto& simpleFwdMatrix = *(pSimpleFwdPaths->matrix());
-    auto& act360FwdMatrix = *(pAct360FwdPaths->matrix());
+    auto& cashRateFwdMatrix = *(pCashRateFwdPaths->matrix());
     for (decltype(nTimes) i = 0; i < nTimes; ++i) { // for each month
         auto t = timeGrid.at(i);
-        auto monthStart = (QuantLib::Natural)std::round(t * 12.0);
+        auto monthStart = (Natural)std::round(t * 12.0);
         auto monthEnd = monthStart + tenorMonths;
         auto dtStart = referenceDate + monthStart * Months;
         auto dtEnd = referenceDate + monthEnd * Months;
-        auto tenorAct360 = act360.yearFraction(dtStart, dtEnd);
+        auto tenorCashRate = cashRateDayCounter.yearFraction(dtStart, dtEnd);
         for (decltype(nPaths) path = 0; path < nPaths; ++path) {    // for each path
             auto compounding = 1.0 / B_adj[i][path];
             simpleFwdMatrix[i][path] = (compounding - 1.0) / tenorTime;
-            act360FwdMatrix[i][path] = (compounding - 1.0) / tenorAct360;
+            cashRateFwdMatrix[i][path] = (compounding - 1.0) / tenorCashRate;
         }
     }
-    std::pair<std::shared_ptr<utils::Paths>, std::shared_ptr<utils::Paths>> ret(pSimpleFwdPaths, pAct360FwdPaths);
+    std::pair<std::shared_ptr<utils::Paths>, std::shared_ptr<utils::Paths>> ret(pSimpleFwdPaths, pCashRateFwdPaths);
     return ret;
 }
 
-using DH = utils::DateHelper<char>;
+std::shared_ptr<Paths> calculateParRatePaths(
+    std::ostream& os,
+    Natural tenor,
+    Frequency couponFrequency,
+    double dayCountMultiplier,
+    const ext::shared_ptr<YieldTermStructure>& zvCurve,
+    Size nPaths,
+    const SamplingDriftAdjustZCBPrices& driftAdjSampling,
+    const BackwardInductionZCBCalculator& biZCBCalculator,
+    ZVComparison<char>& zvComparison
+) {
+    os << endl;
+    auto freq = (Natural)couponFrequency;
+    Natural couponTenorMonths = 12 / freq;  // number of months between coupon payments
+    os << tenor << " yr Par Rate Calculation" << endl;
+    os << "calculating drift Adj B matrices..." << endl;
+    Natural numCoupons = tenor * freq;
+    vector<std::shared_ptr<Matrix>> driftAdjBs(numCoupons);  // numCoupons drift-adj B matrices, one for each coupon => P(t, t+0.5), P(t, t+1.0),... P(t, t+10.0)
+    std::shared_ptr<TimeGrid> parTimeGrid;
+    for (decltype(numCoupons) k = 0; k < numCoupons; ++k) { // for each coupon
+        auto driftAdjResult = driftAdjSampling.calculate(
+            (k + 1) * couponTenorMonths,
+            biZCBCalculator,
+            SamplingDriftAdjustZCBPrices::BackEndAdj
+        );
+        driftAdjBs[k] = driftAdjResult.adj_B->matrix();
+        parTimeGrid = driftAdjResult.adj_B->timeGrid();
+        os << "coupon " << k + 1 << "/" << numCoupons;
+        auto now = std::chrono::system_clock::now();
+        os << ", secSinceEpoch=" << std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
+        os << std::endl;
+    }
+    os << "done calculating drift Adj B matrices. calculating par rate paths..." << endl;
+    auto nTimes = parTimeGrid->size();
+    ParRateCalculator parRateClaculator(couponFrequency);
+    std::shared_ptr<Paths> parRatePaths(new Paths(nTimes, nPaths, parTimeGrid));
+    auto& parRateMatrix = *(parRatePaths->matrix());
+    for (decltype(nTimes) i = 0; i < nTimes; ++i) { // for each time slice
+        for (decltype(nPaths) path = 0; path < nPaths; ++path) { // for each path
+            vector<DiscountFactor> dfs(numCoupons);
+            for (decltype(numCoupons) k = 0; k < numCoupons; ++k) { // for each coupon
+                auto const& adj_B = *(driftAdjBs.at(k));
+                dfs[k] = adj_B[i][path];
+            }
+            auto parRate = parRateClaculator(dfs.begin(), dfs.end());
+            parRate *= dayCountMultiplier;
+            parRateMatrix[i][path] = parRate;
+        }
+    }
+    os << tenor << " yr par rate paths calculation completed" << endl;
+    os << endl;
+    os << tenor << " yr Par Rate ZV Comparison Report" << endl;
+    ParRateZVCalculator zvCalculator((Time)tenor, couponFrequency, zvCurve, dayCountMultiplier);
+    zvComparison.report<>(zvCalculator, *parRatePaths);
+    return parRatePaths;
+}
 
-#define DEFAULT_ASOFDATE "T-1"
-#define DEFAULT_MR_XML ""
-#define DEFAULT_FLAT_FORWARD_RATE ""
-#define DEFAULT_MODEL "hw"
-#define DEFAULT_MODEL_PARAMS "{\"a\":\"0.03\",\"sigma\":\"0.0001\"}"
-#define DEFAULT_MATURITY (50.0) // 50 years
-#define DEFAULT_GRID_FREQ (12)  // monthly
-#define DEFAULT_N_PATHS (1000)
+#define DEFAULT_RANDOM_NUMBER_GENERATOR_SEED (28749)
+#define DEFAULT_N_PATHS (500)
+#define DEFAULT_NO_BACKWARD_INDUCTION_VALUES (false)
 
 static string SHORT_RATE_FILENAME_SUFFIX = "short_rate";
 static string DISCOUNT_FACTOR_FILENAME_SUFFIX = "discount_factor";
-static string PAR_RATE_10_YR_FILENAME_SUFFIX = "swap_rate_10y";
-static string FWD_1_MO_FILENAME_SUFFIX = "fwd_1mo";
-static string FWD_3_MO_FILENAME_SUFFIX = "fwd_3mo";
-static string FWD_3_MO_ACT_360_FILENAME_SUFFIX = "fwd_3mo_act_360";
-static string FWD_1_MO_ACT_360_FILENAME_SUFFIX = "fwd_1mo_act_360";
-static string FWD_3_MO_AFFINE_FILENAME_SUFFIX = "fwd_3mo_affine";
-
-static string ZV_DISCOUNT_FACTOR_FILENAME_SUFFIX = "zv_discount_factor";
-static string ZV_PAR_RATE_10_YR_FILENAME_SUFFIX = "zv_par_rate_10y";
+static string FWD_CASH_RATE_FILENAME_SUFFIX = "fwd_cash_rate";
 
 static string CMS_BREAKEVEN_RATE_TREE_FILENAME_SUFFIX = "cms_breakeven_rate_tree";
 static string CMS_BREAKEVEN_RATE_SIMULATION_FILENAME_SUFFIX = "cms_breakeven_rate_simulation";
@@ -123,80 +161,97 @@ namespace po = boost::program_options;
 
 int main(int argc, char* argv[], char* envp[]) {
     try {
-        string asofdate = DEFAULT_ASOFDATE;
-        string mrXML = DEFAULT_MR_XML;
-        string flatForwardRate = DEFAULT_FLAT_FORWARD_RATE;
+        string asofdate;
+        string s_zeroCurve;
+        string flatForwardRate;
         string model = DEFAULT_MODEL;
-        string params = DEFAULT_MODEL_PARAMS;
+        string params;
+        unsigned long rngSeed = DEFAULT_RANDOM_NUMBER_GENERATOR_SEED;
         Real maturity = DEFAULT_MATURITY;
         Natural gridFreq = DEFAULT_GRID_FREQ;
         Size nPaths = DEFAULT_N_PATHS;
+        bool isSofr = DEFAULT_IS_SOFR;
+        bool doNotApplyDiscountFactorDriftAdj = false;
+        bool noBackwardInductionValues = DEFAULT_NO_BACKWARD_INDUCTION_VALUES;
         string outputFolder;
+        bool silent = DEFAULT_SILENT;
         po::options_description desc("Allowed options");
         desc.add_options()
             ("help,h", "produce help message")
-            ("asofdate,d", po::value<string>(&asofdate)->default_value(DEFAULT_ASOFDATE), "evaluation date (T-0|T-1|yyyymmdd)")
-            ("mr-xml", po::value<string>(&mrXML)->default_value(DEFAULT_MR_XML), "market rate xml file")
-            ("flat-forward", po::value<string>(&flatForwardRate)->default_value(DEFAULT_FLAT_FORWARD_RATE), "flat forward rate in % unit")
-            ("model,m", po::value<string>(&model)->default_value(DEFAULT_MODEL), "model type (hw|ghw|ghwln)")
-            ("params", po::value<string>(&params)->default_value(DEFAULT_MODEL_PARAMS), "model parameters")
-            ("maturity", po::value<Real>(&maturity)->default_value(DEFAULT_MATURITY), "simulation duration in years")
-            ("grid-freq,f", po::value<Natural>(&gridFreq)->default_value(DEFAULT_GRID_FREQ), "grid frequency per year: 12=monthly|24=bi-monthly|36=10d|60=6d|72=5d|120=3d|180=2d|360=1d")
-            ("paths,p", po::value<Size>(&nPaths)->default_value(DEFAULT_N_PATHS), "number of interest rate paths to be generated")
-            ("irp-output-dir,o", po::value<string>(&outputFolder)->default_value(""), "interest rate paths output folder path")
-            ("no-adj-df-drift", "do not apply adjustment to discount factor paths to match zv discount factor")
-            ("no-bi-vals", "do not generate and output backward induction values")
-            ("silent,s", "silent running mode")
+            ("asofdate,d", po::value<string>(&asofdate)->default_value(""), "(optional) evaluation date in yyyymmdd format. default to today's date")
+            ("zero-curve,z", po::value<string>(&s_zeroCurve)->default_value(""), "(required) zero/spot curve input json file. \"@-\" to piped in from stdin")
+            ("flat-forward", po::value<string>(&flatForwardRate)->default_value(""), "(optional) flat forward rate in % unit")
+            ("model,m", po::value<string>(&model)->default_value(DEFAULT_MODEL), "(optional) model type (hw|ghw|ghwln). default value is hw")
+            ("params", po::value<string>(&params)->default_value(""), "(optional) model parameters json. formats: JSON string literal, \"@{filePath}\", or \"@-\" to piped in from stdin")
+            ("rng-seed", po::value<unsigned long>(&rngSeed)->default_value(DEFAULT_RANDOM_NUMBER_GENERATOR_SEED), "(optional) seed for the random number generator. the default value is 28749")
+            ("maturity", po::value<Real>(&maturity)->default_value(DEFAULT_MATURITY), "(optional) simulation duration in years. The default value is 50")
+            ("grid-freq,f", po::value<Natural>(&gridFreq)->default_value(DEFAULT_GRID_FREQ), "grid frequency per year: 12=monthly|24=bi-monthly|36=10d|60=6d|72=5d|120=3d|180=2d|360=1d. The default value is 12 (monthly)")
+            ("paths,p", po::value<Size>(&nPaths)->default_value(DEFAULT_N_PATHS), "(optional) number of interest rate paths to be generated. The default value is 500")
+            ("is-sofr", po::value<bool>(&isSofr)->default_value(DEFAULT_IS_SOFR), "(optional) the input zero curve is a SOFR zero curve. true or false. The default value is true")
+            ("irp-output-dir,o", po::value<string>(&outputFolder)->default_value(""), "(optional) interest rate paths output folder path. The default is the current working directory")
+            ("no-adj-df-drift", po::value<bool>(&doNotApplyDiscountFactorDriftAdj)->default_value(false), "(optional) do not apply adjustment to discount factor paths to match zv discount factor. true or false. The default value is false")
+            ("no-bi-vals", po::value<bool>(&noBackwardInductionValues)->default_value(DEFAULT_NO_BACKWARD_INDUCTION_VALUES), "(optional) do not generate and output backward induction values. true or false. The default value is false")
+            ("silent,s", po::value<bool>(&silent)->default_value(DEFAULT_SILENT), "(optional) silent running mode. true or false. The default is false")
             ;
 
         po::variables_map vm;
         po::store(po::parse_command_line(argc, argv, desc), vm);
         po::notify(vm);
-
         if (vm.count("help")) {
             cout << desc << "\n";
             return 1;
         }
 
-        bool silent = (vm.count("silent") > 0);
-        auto doNotApplyDiscountFactorDriftAdj = (vm.count("no-adj-df-drift") > 0);
-        auto noBackwardInductionValues = (vm.count("no-bi-vals") > 0);
-        auto evalDate = DH::getEvaluationDate(asofdate);
-        auto modelType = ModelTypeLookup::from_string(model);
+        QL_REQUIRE(!s_zeroCurve.empty(), "zero/spot curve input json file is not optional");
+        if (model.empty()) {
+            model = DEFAULT_MODEL;
+        }
+        QL_REQUIRE(!params.empty(), "model params cannot be empty");
+        QL_REQUIRE(maturity > 0., "maturity (" << maturity << ") must be a positive");
+        QL_REQUIRE(gridFreq > 0, "grid frequency (" << gridFreq << ") must be a positive integer");
+        QL_REQUIRE(nPaths > 0, "number of interest rate paths (" << nPaths << ") must be a positive integer");
+        auto evalDate = (asofdate.empty() ? Date::todaysDate() : DateFormat<char>::from_yyyymmdd(asofdate, false));
+        auto modelType = boost::lexical_cast<ModelType>(model);
         auto paramsJSON = get_input_content(params);
 
         auto& os = get_nullable_cout<char>(silent);
 
-        os << "asofdate=" << (asofdate.length() > 0 ? asofdate : "(empty)") << endl;
-        os << "evalDate=" << DH::to_yyyymmdd(evalDate, true) << endl;
-        os << "mrXML=" << mrXML << endl;
-        os << "flatForwardRate=" << (flatForwardRate == "" ? "(empty - zv curve will be used)" : flatForwardRate + "%") << endl;
-        os << "modelType=" << modelType << endl;
+        os << endl;
+        os << "One-Factor Model Simulation" << endl;
+        os << "asofdate=" << DateFormat<char>::to_yyyymmdd(evalDate, true) << endl;
+        os << "zero-curve=" << s_zeroCurve << endl;
+        os << "flat-forward=" << (flatForwardRate.empty() ? "(not set - zv curve will be used)" : flatForwardRate + "%") << endl;
+        os << "model=" << boost::lexical_cast<string>(modelType) << endl;
         os << "params=" << paramsJSON << endl;
+        os << "rng-seed=" << rngSeed << endl;
         os << "maturity=" << maturity << endl;
-        os << "gridFreq=" << gridFreq << endl;
+        os << "grid-freq=" << gridFreq << endl;
         os << "paths=" << nPaths << endl;
-        os << "irp-output-dir=" << (outputFolder.length() > 0 ? outputFolder : "(current working directory)") << endl;
-        os << "doNotApplyDiscountFactorDriftAdj=" << (doNotApplyDiscountFactorDriftAdj ? "true" : "false") << endl;
-        os << "noBackwardInductionValues=" << (noBackwardInductionValues ? "true" : "false") << endl;
+        os << "is-sofr=" << (isSofr ? "true" : "false") << endl;
+        os << "irp-output-dir=" << (!outputFolder.empty() ? outputFolder : "(current working directory)") << endl;
+        os << "no-adj-df-drift=" << (doNotApplyDiscountFactorDriftAdj ? "true" : "false") << endl;
+        os << "no-bi-vals=" << (noBackwardInductionValues ? "true" : "false") << endl;
         os << "silent=" << (silent ? "true" : "false") << endl;
-
-        if (nPaths == 0) {
-            throw std::exception("paths has to be positive (> 0)");
-        }
+        os << endl;
 
         Settings::instance().evaluationDate() = evalDate;
-        DayCounter dayCounter = Thirty360(Thirty360::BondBasis);
-        Natural settlementDays = 2;
-        Calendar calendar = TARGET();
-        auto d = calendar.adjust(evalDate);
-        auto settleDate = calendar.advance(d, settlementDays * Days);
-        auto const& referenceDate = settleDate;
+
         auto pParams = instantiateModelParams(modelType, paramsJSON);
         os << endl;
-        os << modelType << " model params" << endl;
+        os << boost::lexical_cast<string>(modelType) << " model params" << endl;
         os << *pParams;
-        auto yieldCurve = (flatForwardRate == "" ? MarketRate(evalDate).load(mrXML).getThirty360ZVDiscountCurve(referenceDate) : ext::shared_ptr<YieldTermStructure>(new FlatForward(referenceDate, boost::lexical_cast<Rate>(flatForwardRate)/100.0, dayCounter)));
+        const auto& curveConfig = getCurveConfigs().at(isSofr);
+        const auto& parRateCouponFrequency = curveConfig.parRateCouponFrequency;
+        const auto& parRateDayCountMultiplier = curveConfig.parRateDayCountMultiplier;
+        auto pCashRateIndex = curveConfig.createCashRateIndex();
+        auto cashRateIndexTenor = pCashRateIndex->tenor();
+        auto cashRateIndexTenorUnits = cashRateIndexTenor.units();
+        QL_REQUIRE(cashRateIndexTenorUnits == Years || cashRateIndexTenorUnits == Months, "cash rate index's time unit must be either Months or Years");
+        auto cashRateTenorMonths = (cashRateIndexTenorUnits == Years ? cashRateIndexTenor.length() * 12 : cashRateIndexTenor.length());
+        auto cashRateDayCounter = pCashRateIndex->dayCounter();
+        auto yieldCurve = (flatForwardRate.empty()
+            ? MarketRate::readAsThirty360ZeroCurve(s_zeroCurve, evalDate, true)
+            : ext::shared_ptr<YieldTermStructure>(new FlatForward(evalDate, boost::lexical_cast<Rate>(flatForwardRate)/100.0, Thirty360(Thirty360::BondBasis))));
         Handle<YieldTermStructure> zvCurve(yieldCurve);
         auto shortRateModel = pParams->createModel(zvCurve);
         auto oneFactorModel = ext::dynamic_pointer_cast<OneFactorModel>(shortRateModel); // the short rate model must be a one factor model
@@ -206,8 +261,7 @@ int main(int argc, char* argv[], char* envp[]) {
         std::shared_ptr<OneFactorAffineLike> oneFactorAffineLike(new OneFactorAffineLikeHack(modelType, oneFactorAffineModel));
         OneFactorShortRateTreeSampling shortRateSampling(*oneFactorModel, yieldCurve, !doNotApplyDiscountFactorDriftAdj);
         // create mersenne twister uniform random generator
-        unsigned long seed = 28749;
-        MersenneTwisterUniformRng rngGenerator(seed);
+        MersenneTwisterUniformRng rngGenerator(rngSeed);
         // start the random walks
         os << endl;
         os << "Random Walking..." << endl;
@@ -272,86 +326,37 @@ int main(int argc, char* argv[], char* envp[]) {
 
         auto monthlyResult = OneFactorShortRateTreeSampling::toMonthlyResult(randomWalksResult);
         auto const& monthlyTimeGrid = *(monthlyResult.timeGrid);
-        using Scenario = std::string;
-        auto get_Paths_Scenario_Model_OutputFilePath = [&outputFolder, &evalDate, &model, &nPaths](const string& fnSuffix, const Scenario& scenario) -> string {
+
+        auto get_Model_OutputFilePath = [&outputFolder, &model](const string& fnSuffix, const string& extension) -> string {
             std::ostringstream os;
-            os << DH::to_yyyymmdd(evalDate, false);
-            os << "_" << nPaths;
-            os << "_" << scenario;
-            os << "_" << model;
-            os << "_" << fnSuffix;
-            os << ".txt";
+            os << model << "_" << fnSuffix << extension;
             auto filename = os.str();
             return (outputFolder.length() > 0 ? outputFolder + "\\" + filename : filename);
         };
-        auto get_Paths_Model_OutputFilePath = [&outputFolder, &evalDate, &model, &nPaths](const string& fnSuffix) -> string {
-            std::ostringstream os;
-            os << DH::to_yyyymmdd(evalDate, false);
-            os << "_" << nPaths;
-            os << "_" << model;
-            os << "_" << fnSuffix;
-            os << ".txt";
-            auto filename = os.str();
-            return (outputFolder.length() > 0 ? outputFolder + "\\" + filename : filename);
-        };
-        auto get_Model_OutputFilePath = [&outputFolder, &evalDate, &model](const string& fnSuffix) -> string {
-            std::ostringstream os;
-            os << DH::to_yyyymmdd(evalDate, false);
-            os << "_" << model;
-            os << "_" << fnSuffix;
-            os << ".txt";
-            auto filename = os.str();
-            return (outputFolder.length() > 0 ? outputFolder + "\\" + filename : filename);
-        };
-        auto get_OutputFilePath = [&outputFolder, &evalDate](const std::string& fnSuffix) -> std::string {
+        auto get_OutputFilePath = [&outputFolder](const std::string& fnSuffix, const string& extension) -> std::string {
             std::ostringstream oss;
-            oss << DH::to_yyyymmdd(evalDate, false);
-            oss << "_" << fnSuffix << ".txt";
+            oss << fnSuffix << extension;
             auto filename = oss.str();
             return (outputFolder.length() > 0 ? outputFolder + "\\" + filename : filename);
         };
         OneFactorSimulationOutput output(
             os,
-            get_Paths_Scenario_Model_OutputFilePath,
-            get_Paths_Model_OutputFilePath,
             get_Model_OutputFilePath,
             get_OutputFilePath
         );
 
-        const Rate UP_25 = 25.0 / 10000.0;
-        const Rate DN_25 = -UP_25;
-        ShockTraits<FlatRateShocker<Rate>> up(UP_25, "up");
-        ShockTraits<FlatRateShocker<Rate>> dn(DN_25, "dn");
-        ShockTraits<DiscountFactorFlatRateShocker<QuantLib::Compounded, QuantLib::Semiannual>> up_df(UP_25, "up");
-        ShockTraits<DiscountFactorFlatRateShocker<QuantLib::Compounded, QuantLib::Semiannual>> dn_df(DN_25, "dn");
+        std::shared_ptr<Paths> pDFPaths = monthlyResult.discountFactorPaths;
+        std::shared_ptr<Paths> pShortRatePaths = monthlyResult.shortRatePaths;
         
-        output.dumpPathsWithShocks(
+        output.dumpPaths(
             *(monthlyResult.shortRatePaths),
-            up,
-            dn,
             OutputTraits("short rate", SHORT_RATE_FILENAME_SUFFIX),
             true
         );
-        output.dumpPathsWithShocks(
+        output.dumpPaths(
             *(monthlyResult.discountFactorPaths),
-            up_df,
-            dn_df,
             OutputTraits("discount factor", DISCOUNT_FACTOR_FILENAME_SUFFIX),
             true
-        );
-
-        output.dumpZVValues<DiscountFactorZVCalculator>(
-            yieldCurve,
-            monthlyTimeGrid,
-            OutputTraits("zv discount factor", ZV_DISCOUNT_FACTOR_FILENAME_SUFFIX),
-            true
-        );
-        output.dumpZVValues<ParRateZVCalculator<10, Semiannual>>(
-            yieldCurve,
-            monthlyTimeGrid,
-            OutputTraits("zv 10 yr par rate", ZV_PAR_RATE_10_YR_FILENAME_SUFFIX),
-            false,
-            100.0
         );
 
         bool generateBackwardInductionValues = !noBackwardInductionValues;
@@ -384,212 +389,180 @@ int main(int argc, char* argv[], char* envp[]) {
             };
 
             SamplingBackwardInductionValues backwardInductionValuesSampling(randomWalksResult);
+            /*
+            {
+                QuantLib::Time timeSlice = 5.;
+                auto timeIndex = randomWalksResult.timeGrid->closestIndex(timeSlice);
+                auto result = backwardInductionValuesSampling.sample(120, biParRateCalculator);
+                auto pCalculateValues = result.valuesTree->at(timeIndex);
+                auto probabilityVector = randomWalksResult.nodeVisitProbabilities->at(timeIndex);
+                QL_ASSERT(pCalculateValues != nullptr, "");
+                const auto& valueVector = *pCalculateValues;
+                QL_ASSERT(probabilityVector.size() == valueVector.size(), "");
+                auto n_nodes = probabilityVector.size();
+                auto weightedAvg = 0.;
+                for (decltype(n_nodes) i = 0; i < n_nodes; ++i) {
+                    const auto& valueAtTreeNode = valueVector[i];
+                    const auto& probabilityAtTreeNode = probabilityVector[i];
+                    weightedAvg += valueAtTreeNode * probabilityAtTreeNode;
+                }
+                cout << fixed << "weighted-average backward-induction 10yr par rate @" << timeSlice << "yr = " << weightedAvg * 100.0 << "%" << endl;
+            }
+            {
+                QuantLib::Time timeSlice = 10.;
+                auto timeIndex = randomWalksResult.timeGrid->closestIndex(timeSlice);
+                auto result = backwardInductionValuesSampling.sample(120, biParRateCalculator);
+                auto pCalculateValues = result.valuesTree->at(timeIndex);
+                auto probabilityVector = randomWalksResult.nodeVisitProbabilities->at(timeIndex);
+                QL_ASSERT(pCalculateValues != nullptr, "");
+                const auto& valueVector = *pCalculateValues;
+                QL_ASSERT(probabilityVector.size() == valueVector.size(), "");
+                auto n_nodes = probabilityVector.size();
+                auto weightedAvg = 0.;
+                for (decltype(n_nodes) i = 0; i < n_nodes; ++i) {
+                    const auto& valueAtTreeNode = valueVector[i];
+                    const auto& probabilityAtTreeNode = probabilityVector[i];
+                    weightedAvg += valueAtTreeNode * probabilityAtTreeNode;
+                }
+                cout << fixed << "weighted-average backward-induction 10yr par rate @" << timeSlice << "yr = " << weightedAvg * 100.0 << "%" << endl;
+            }
+            */
 
             SamplingDriftAdjustZCBPrices driftAdjSampling(backwardInductionValuesSampling, yieldCurve, monthlyResult.discountFactorPaths);
-            // get 3 month simple forward rates
+            // get simple-copounded forward cash rates
+            std::shared_ptr<Paths> pCashRatePaths;
             {
                 os << endl;
-                Natural tenorMonths = 3;
+                auto tenorMonths = cashRateTenorMonths;
                 auto driftAdjResult = driftAdjSampling.calculate(
                     tenorMonths,
                     biZCBCalculator,
                     SamplingDriftAdjustZCBPrices::FrontEndAdj,
                     backwardInductionProgressMonitor
                 );
-                auto pr = getSimpleRatePaths(tenorMonths, *(driftAdjResult.adj_B), evalDate);
-                output.dumpPathsWithShocks(
-                    *(pr.first),
-                    up,
-                    dn,
-                    OutputTraits("fwd 3mo rate", FWD_3_MO_FILENAME_SUFFIX),
-                    false
-                );
-                output.dumpPathsWithShocks(
+                auto pr = getSimpleRatePaths(tenorMonths, cashRateDayCounter, *(driftAdjResult.adj_B), evalDate);
+                pCashRatePaths = pr.second;
+                output.dumpPaths(
                     *(pr.second),
-                    up,
-                    dn,
-                    OutputTraits("fwd 3mo rate (act/360)", FWD_3_MO_ACT_360_FILENAME_SUFFIX),
+                    OutputTraits("fwd cash rate", FWD_CASH_RATE_FILENAME_SUFFIX),
                     false
                 );
-                /*
-                auto tenorTime = (QuantLib::Time)tenorMonths / 12.0;
-                auto const& discountFactorMatrix = *(monthlyResult.discountFactorPaths->matrix());
-                auto const& simpleFwdMatrix = *(pr.first->matrix());
-                {
-                    {
-                        os << endl;
-                        auto avgPV = 0.0;
-                        for (decltype(nPaths) path = 0; path < nPaths; ++path) {
-                            auto pv = simpleFwdMatrix[0][path] * tenorTime * discountFactorMatrix[3][path];
-                            pv += discountFactorMatrix[3][path];
-                            avgPV += pv / nPaths;
-                        }
-                        os << "avgPV=" << avgPV << endl;
-                    }
-                    {
-                        os << endl;
-                        auto avgPV = 0.0;
-                        for (decltype(nPaths) path = 0; path < nPaths; ++path) {
-                            auto pv = simpleFwdMatrix[0][path] * tenorTime * discountFactorMatrix[3][path];
-                            pv += simpleFwdMatrix[3][path] * tenorTime * discountFactorMatrix[6][path];
-                            pv += discountFactorMatrix[6][path];
-                            avgPV += pv / nPaths;
-                        }
-                        os << "avgPV=" << avgPV << endl;
-                    }
-                    {
-                        os << endl;
-                        auto avgPV = 0.0;
-                        for (decltype(nPaths) path = 0; path < nPaths; ++path) {
-                            auto pv = simpleFwdMatrix[0][path] * tenorTime * discountFactorMatrix[3][path];
-                            pv += simpleFwdMatrix[3][path] * tenorTime * discountFactorMatrix[6][path];
-                            pv += simpleFwdMatrix[6][path] * tenorTime * discountFactorMatrix[9][path];
-                            pv += discountFactorMatrix[9][path];
-                            avgPV += pv / nPaths;
-                        }
-                        os << "avgPV=" << avgPV << endl;
-                    }
-                }
-                */
             }
 
-#define PAR_TENOR (10)
-#define PAR_COUPON_FREQ (QuantLib::Semiannual)
-            // get the backend adjusted 10 yr par rates
-            {
-                os << endl;
-                QuantLib::Natural couponTenorMonths = 12 / (QuantLib::Natural)PAR_COUPON_FREQ;
-                os << PAR_TENOR << " yr Par Rate Calculation" << endl;
-                QuantLib::Natural numCoupons = PAR_TENOR * (QuantLib::Natural)PAR_COUPON_FREQ;
-                std::vector<std::shared_ptr<QuantLib::Matrix>> driftAdjBs(numCoupons);  // numCoupons drift-adj B matrices, one for each coupon => P(t, t+0.5), P(t, t+1.0),... P(t, t+10.0)
-                std::shared_ptr<QuantLib::TimeGrid> parTimeGrid;
-                for (decltype(numCoupons) k = 0; k < numCoupons; ++k) { // for each coupon
-                    auto driftAdjResult = driftAdjSampling.calculate(
-                        (k + 1) * couponTenorMonths,
-                        biZCBCalculator,
-                        SamplingDriftAdjustZCBPrices::BackEndAdj
-                    );
-                    driftAdjBs[k] = driftAdjResult.adj_B->matrix();
-                    parTimeGrid = driftAdjResult.adj_B->timeGrid();
-                    os << "coupon " << k + 1 << "/" << numCoupons;
-                    auto now = std::chrono::system_clock::now();
-                    os << ", secSinceEpoch=" << std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count();
-                    os << std::endl;
-                }
-                auto nTimes = parTimeGrid->size();
-                ParRateCalculator parRateClaculator(PAR_COUPON_FREQ);
-                std::shared_ptr<Paths> parRatePaths(new Paths(nTimes, nPaths, parTimeGrid));
-                auto& parRateMatrix = *(parRatePaths->matrix());
-                for (decltype(nTimes) i = 0; i < nTimes; ++i) { // for each time slice
-                    for (decltype(nPaths) path = 0; path < nPaths; ++path) { // for each path
-                        std::vector<QuantLib::DiscountFactor> dfs(numCoupons);
-                        for (decltype(numCoupons) k = 0; k < numCoupons; ++k) { // for each coupon
-                            auto const& adj_B = *(driftAdjBs.at(k));
-                            dfs[k] = adj_B[i][path];
-                        }
-                        auto parRate = parRateClaculator(dfs.begin(), dfs.end());
-                        parRateMatrix[i][path] = parRate;
-                    }
-                }
-
-                os << endl;
-                os << PAR_TENOR << " yr Par Rate ZV Comparison Report" << endl;
-                zvComparison.report<ParRateZVCalculator<PAR_TENOR, PAR_COUPON_FREQ>>(*parRatePaths);
-                output.dumpPathsWithShocks(
-                    *parRatePaths,
-                    up,
-                    dn,
-                    OutputTraits("10 yr par rate", PAR_RATE_10_YR_FILENAME_SUFFIX),
+            vector<Natural> parTenors{ 5, 10 };
+            map<Natural, std::shared_ptr<utils::Paths>> parRatePathsByTenor;
+            for (const auto& parTenor : parTenors) {    // for each par tenor
+                // get the backend adjusted par rates
+                auto pParRatePaths = calculateParRatePaths(
+                    os,
+                    parTenor,
+                    parRateCouponFrequency,
+                    parRateDayCountMultiplier,
+                    yieldCurve,
+                    nPaths,
+                    driftAdjSampling,
+                    biZCBCalculator,
+                    zvComparison
+                );
+                ostringstream oss;
+                oss << parTenor << " yr par rate";
+                auto type = oss.str();
+                oss.str("");
+                oss.clear();
+                oss << "swap_rate_" << parTenor << "y";
+                auto fnSuffix = oss.str();
+                output.dumpPaths(
+                    *pParRatePaths,
+                    OutputTraits(type, fnSuffix),
                     false
                 );
+                parRatePathsByTenor[parTenor] = pParRatePaths;
+            }
 
-                // CMS breakeven rate calculations
-                /////////////////////////////////////////////////////////////////////////////////////////////
-                QuantLib::Frequency cmsFloatingLegFreq = QuantLib::Quarterly;   // one CMS par coupon payment @ 3mo time
-                // backward induction calculator that calculate the tree CMS breakeven rates
-                BackwardInductionCMSBreakevenCalculator biCMSBreakevenCalculator(
-                    biDiscountBondCalcator,
-                    PAR_COUPON_FREQ,
-                    cmsFloatingLegFreq
-                );
+            {
                 os << endl;
-                os << "Tree CMS Breakeven Rate Calculation" << endl;
-                auto cmsBreakevenTreeResult = backwardInductionValuesSampling.sample(
-                    PAR_TENOR * 12,
-                    biCMSBreakevenCalculator,
-                    backwardInductionProgressMonitor
-                );  // calculate the tree breakevent CMS rates. there should be one tree CMS breakevent rate per time slice
-                auto const& cmdBreakevenTreeValues = *(cmsBreakevenTreeResult.valuesTree);
-
-                os << endl;
-                os << "Tree vs Simulation CMS Breakeven Rate Comparison" << endl;
-                os << "t";
-                os << "," << "Tree Rate";
-                os << "," << "Simulation Rate";
-                os << "," << "Diff (bp)";
-                os << endl;
-                os << std::fixed << std::setprecision(16);
-                std::vector<QuantLib::Real> cmsBreakevenRatesTree(nTimes);
-                std::vector<QuantLib::Real> cmsBreakevenRatesSimulation(nTimes);
-                auto discountFactorPaths = randomWalksResult.discountFactorPaths;
-                auto const& discountFactorTimeGrid = *(discountFactorPaths->timeGrid());
-                auto const& discountFactorMatrix = *(discountFactorPaths->matrix());
-                QuantLib::Time dt = 1.0 / (QuantLib::Real)cmsFloatingLegFreq;   // first coupon time
-                for (decltype(nTimes) i = 0; i < nTimes; ++i) { // for each time slice
-                    auto t = parTimeGrid->at(i);
-                    auto T = t + dt;
-                    auto j = discountFactorTimeGrid.closestIndex(T);
-                    auto avgPV = 0.0;   // average PV @ t=0 of the single par rate coupon paid @ T
-                    for (decltype(nPaths) path = 0; path < nPaths; ++path) {    // for each path
-                        auto const& parRate = parRateMatrix[i][path];   // par rate is the coupon rate
-                        auto const& df = discountFactorMatrix[j][path]; // discount factor at T (P(0, T))
-                        auto pathPV = parRate * dt * df;    // PV of the coupon casflow for this path
-                        avgPV += pathPV / nPaths;
-                    }
-                    auto zvDF_T = zvCurve->discount(T);
-                    auto simulationBreakEventCMSRate = avgPV / dt / zvDF_T;   // avgPV = simulationBreakEventCMSRate * dt * zvDF_T
-                    auto const& treeBreakEventCMSRate = cmdBreakevenTreeValues.at(i)->at(0);
-                    cmsBreakevenRatesTree[i] = treeBreakEventCMSRate;
-                    cmsBreakevenRatesSimulation[i] = simulationBreakEventCMSRate;
-                    os << t;
-                    os << "," << treeBreakEventCMSRate * 100.0;
-                    os << "," << simulationBreakEventCMSRate * 100.0;
-                    os << "," << (simulationBreakEventCMSRate - treeBreakEventCMSRate) * 10000.0;
-                    os << endl;
-                }
-                output.dumpTreeCMSBreakevenRates(
-                    cmsBreakevenRatesTree,
-                    *parTimeGrid,
-                    OutputTraits("tree CMS breakeven rate", CMS_BREAKEVEN_RATE_TREE_FILENAME_SUFFIX),
-                    true,
-                    100.0
+                IRPSimulationOutput simulationOutput;
+                simulationOutput.pDFs = pDFPaths;
+                simulationOutput.pShortRates = pShortRatePaths;
+                simulationOutput.pBenchmarkCashRates = pCashRatePaths;
+                simulationOutput.pBenchmark5yrParRates = parRatePathsByTenor.at(5);
+                simulationOutput.pBenchmark10yrParRates = parRatePathsByTenor.at(10);
+                output.dumpIRPSimulationOutput(
+                    simulationOutput,
+                    OutputTraits("interest rate path simulation json output", "irp_simulation_output", ".json")
                 );
-                output.dumpSimulationCMSBreakevenRates(
-                    cmsBreakevenRatesSimulation,
-                    *parTimeGrid,
-                    OutputTraits("simulation CMS breakeven rate", CMS_BREAKEVEN_RATE_SIMULATION_FILENAME_SUFFIX),
-                    true,
-                    100.0
-                );
-                /////////////////////////////////////////////////////////////////////////////////////////////
             }
 
             /*
-            // get unadjusted 10 yr par rates
-            {
+            // CMS breakeven rate calculations
+            /////////////////////////////////////////////////////////////////////////////////////////////
+            QuantLib::Frequency cmsFloatingLegFreq = QuantLib::Quarterly;   // one CMS par coupon payment @ 3mo time
+            // backward induction calculator that calculate the tree CMS breakeven rates
+            BackwardInductionCMSBreakevenCalculator biCMSBreakevenCalculator(
+                biDiscountBondCalcator,
+                PAR_COUPON_FREQ,
+                cmsFloatingLegFreq
+            );
+            os << endl;
+            os << "Tree CMS Breakeven Rate Calculation" << endl;
+            auto cmsBreakevenTreeResult = backwardInductionValuesSampling.sample(
+                PAR_TENOR * 12,
+                biCMSBreakevenCalculator,
+                backwardInductionProgressMonitor
+            );  // calculate the tree breakevent CMS rates. there should be one tree CMS breakevent rate per time slice
+            auto const& cmdBreakevenTreeValues = *(cmsBreakevenTreeResult.valuesTree);
+
+            os << endl;
+            os << "Tree vs Simulation CMS Breakeven Rate Comparison" << endl;
+            os << "t";
+            os << "," << "Tree Rate";
+            os << "," << "Simulation Rate";
+            os << "," << "Diff (bp)";
+            os << endl;
+            os << std::fixed << std::setprecision(16);
+            std::vector<QuantLib::Real> cmsBreakevenRatesTree(nTimes);
+            std::vector<QuantLib::Real> cmsBreakevenRatesSimulation(nTimes);
+            auto discountFactorPaths = randomWalksResult.discountFactorPaths;
+            auto const& discountFactorTimeGrid = *(discountFactorPaths->timeGrid());
+            auto const& discountFactorMatrix = *(discountFactorPaths->matrix());
+            QuantLib::Time dt = 1.0 / (QuantLib::Real)cmsFloatingLegFreq;   // first coupon time
+            for (decltype(nTimes) i = 0; i < nTimes; ++i) { // for each time slice
+                auto t = parTimeGrid->at(i);
+                auto T = t + dt;
+                auto j = discountFactorTimeGrid.closestIndex(T);
+                auto avgPV = 0.0;   // average PV @ t=0 of the single par rate coupon paid @ T
+                for (decltype(nPaths) path = 0; path < nPaths; ++path) {    // for each path
+                    auto const& parRate = parRateMatrix[i][path];   // par rate is the coupon rate
+                    auto const& df = discountFactorMatrix[j][path]; // discount factor at T (P(0, T))
+                    auto pathPV = parRate * dt * df;    // PV of the coupon casflow for this path
+                    avgPV += pathPV / nPaths;
+                }
+                auto zvDF_T = zvCurve->discount(T);
+                auto simulationBreakEventCMSRate = avgPV / dt / zvDF_T;   // avgPV = simulationBreakEventCMSRate * dt * zvDF_T
+                auto const& treeBreakEventCMSRate = cmdBreakevenTreeValues.at(i)->at(0);
+                cmsBreakevenRatesTree[i] = treeBreakEventCMSRate;
+                cmsBreakevenRatesSimulation[i] = simulationBreakEventCMSRate;
+                os << t;
+                os << "," << treeBreakEventCMSRate * 100.0;
+                os << "," << simulationBreakEventCMSRate * 100.0;
+                os << "," << (simulationBreakEventCMSRate - treeBreakEventCMSRate) * 10000.0;
                 os << endl;
-                auto result = backwardInductionValuesSampling.sample(PAR_TENOR*12, biParRateCalculator, backwardInductionProgressMonitor);
-                os << endl;
-                os << PAR_TENOR << " yr Par Rate ZV Comparison Report" << endl;
-                zvComparison.report<ParRateZVCalculator<PAR_TENOR, PAR_COUPON_FREQ>>(*(result.valuePaths));
-                output.dumpPathsWithShocks(
-                    *(result.valuePaths),
-                    up,
-                    dn,
-                    OutputTraits("10 yr par rate", PAR_RATE_10_YR_FILENAME_SUFFIX),
-                    false
-                );
             }
+            output.dumpTreeCMSBreakevenRates(
+                cmsBreakevenRatesTree,
+                *parTimeGrid,
+                OutputTraits("tree CMS breakeven rate", CMS_BREAKEVEN_RATE_TREE_FILENAME_SUFFIX),
+                true,
+                100.0
+            );
+            output.dumpSimulationCMSBreakevenRates(
+                cmsBreakevenRatesSimulation,
+                *parTimeGrid,
+                OutputTraits("simulation CMS breakeven rate", CMS_BREAKEVEN_RATE_SIMULATION_FILENAME_SUFFIX),
+                true,
+                100.0
+            );
+            /////////////////////////////////////////////////////////////////////////////////////////////
             */
         }
 

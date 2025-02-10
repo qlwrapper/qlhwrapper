@@ -1,8 +1,22 @@
+/*
+ Copyright (C) 2022 QLHWrapper
+
+ This file is part of QLHWrapper, a free-software/open-source library
+ for financial quantitative analysts and developers
+
+ QLHWrapper is free software: you can redistribute it and/or modify it
+ under the terms of the The 2-Clause BSD License license - https://opensource.org/licenses/BSD-2-Clause.
+
+ This program is distributed in the hope that it will be useful, but WITHOUT
+ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE.  See the license for more details.
+*/
+
 #pragma once
 
 #include <ql/quantlib.hpp>
-#include <utils/types.h>
-#include <utils/string.h>
+#include <utils/string-io-types.hpp>
+#include <utils/string.hpp>
 #include <utils/paths.hpp>
 #include <vector>
 #include <cmath>
@@ -44,17 +58,17 @@ namespace utils {
         const std::vector<QuantLib::Natural>& importantMaturities() const {
             return importantMaturities_;
         }
-        template <
+        template<
             typename ZV_CALCULATOR,
             typename STATS_CONVERTER = IdentityStatsConverter
         >
         void report(
+            const ZV_CALCULATOR& zvCalculator,
             const Paths& paths
         ) {
             auto& os = ostream();
             utf8_wstring_converter<_Elem> utf8_converter;
             auto err = 0.0;
-            ZV_CALCULATOR zvCalculator(zvCurve());
             STATS_CONVERTER statsConverter;
             auto const& timeGrid = *(paths.timeGrid());
             auto statistics = paths.statistics();
@@ -71,15 +85,25 @@ namespace utils {
                 auto stdev = statsConverter(stats.second, t, grid_delta_t);
                 auto diff = mean - zvValue;
                 os << t;
-                os << comma << utf8_converter.from_bytes("mean=") << mean * 100.0;
-                os << comma << utf8_converter.from_bytes("stdev=") << stdev * 100.0;
-                os << comma << utf8_converter.from_bytes("zvValue=") << zvValue * 100.0;
-                os << comma << utf8_converter.from_bytes("diff=") << diff * 10000.0 << " bp";
+                os << comma << utf8_converter.from_bytes("mean=") << QuantLib::io::percent(mean);
+                os << comma << utf8_converter.from_bytes("stdev=") << QuantLib::io::percent(stdev);
+                os << comma << utf8_converter.from_bytes("zvValue=") << QuantLib::io::percent(zvValue);
+                os << comma << utf8_converter.from_bytes("diff=") << QuantLib::io::basis_point(diff);
                 os << std::endl;
                 err += std::pow(diff, 2.0);
             }
             err = std::sqrt(err);
-            os << "err=" << err * 10000.0 << " bp" << std::endl;
+            os << "err=" << QuantLib::io::basis_point(err) << std::endl;
+        }
+        template <
+            typename ZV_CALCULATOR,
+            typename STATS_CONVERTER = IdentityStatsConverter
+        >
+        void report(
+            const Paths& paths
+        ) {
+            ZV_CALCULATOR zvCalculator(zvCurve());
+            report<ZV_CALCULATOR, STATS_CONVERTER>(zvCalculator, paths);
         }
     };
 }

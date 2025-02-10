@@ -1,25 +1,38 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.2.32526.322
+VisualStudioVersion = 17.4.33110.190
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OneFactorSimulation", "OneFactorSimulation\OneFactorSimulation.vcxproj", "{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}"
+	ProjectSection(ProjectDependencies) = postProject
+		{C9BE69DB-0B96-4DB0-9302-D7F7628126BD} = {C9BE69DB-0B96-4DB0-9302-D7F7628126BD}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HullWhiteCalibration", "HullWhiteCalibration\HullWhiteCalibration.vcxproj", "{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}"
+	ProjectSection(ProjectDependencies) = postProject
+		{C9BE69DB-0B96-4DB0-9302-D7F7628126BD} = {C9BE69DB-0B96-4DB0-9302-D7F7628126BD}
+	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "utils", "utils", "{B43437AF-B0BC-41F0-B5F6-DF4761FF01E0}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "utils", "utils", "{4E675D4D-C2BE-4050-A914-635E40F47F92}"
 	ProjectSection(SolutionItems) = preProject
+		utils\auto-link.hpp = utils\auto-link.hpp
 		utils\backward-induction.hpp = utils\backward-induction.hpp
 		utils\black_model_calibrator.hpp = utils\black_model_calibrator.hpp
 		utils\calibration_helpers.hpp = utils\calibration_helpers.hpp
 		utils\console.hpp = utils\console.hpp
+		utils\curve-config.hpp = utils\curve-config.hpp
+		utils\date-format.hpp = utils\date-format.hpp
+		utils\default-defs.hpp = utils\default-defs.hpp
 		utils\discretizedbonds.hpp = utils\discretizedbonds.hpp
-		utils\enum_helper.h = utils\enum_helper.h
+		utils\enum-lookup.hpp = utils\enum-lookup.hpp
+		utils\enum-lookups.hpp = utils\enum-lookups.hpp
 		utils\flat_rate_shocker.hpp = utils\flat_rate_shocker.hpp
+		utils\g2-params.hpp = utils\g2-params.hpp
 		utils\ghw_tie_up.hpp = utils\ghw_tie_up.hpp
 		utils\hullwhite_hack.hpp = utils\hullwhite_hack.hpp
 		utils\hull_white_params.hpp = utils\hull_white_params.hpp
 		utils\interest_rate.hpp = utils\interest_rate.hpp
+		utils\io.hpp = utils\io.hpp
 		utils\irp_simulation.hpp = utils\irp_simulation.hpp
 		utils\json_io.h = utils\json_io.h
 		utils\market_rate.hpp = utils\market_rate.hpp
@@ -27,43 +40,54 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "utils", "utils", "{B43437AF
 		utils\model_type.hpp = utils\model_type.hpp
 		utils\one_factor_affine_calc.hpp = utils\one_factor_affine_calc.hpp
 		utils\one_factor_affine_like_hack.hpp = utils\one_factor_affine_like_hack.hpp
+		utils\path-output.hpp = utils\path-output.hpp
 		utils\paths.hpp = utils\paths.hpp
 		utils\paths_utils.hpp = utils\paths_utils.hpp
 		utils\quant_type.hpp = utils\quant_type.hpp
+		utils\required-cpp17.hpp = utils\required-cpp17.hpp
 		utils\short_rate_calibration.hpp = utils\short_rate_calibration.hpp
 		utils\short_rate_tree_adaptor.hpp = utils\short_rate_tree_adaptor.hpp
 		utils\simulation_verification.hpp = utils\simulation_verification.hpp
-		utils\string.h = utils\string.h
-		utils\text_file_reader.h = utils\text_file_reader.h
-		utils\types.h = utils\types.h
+		utils\string-io-types.hpp = utils\string-io-types.hpp
+		utils\string.hpp = utils\string.hpp
 		utils\utilities.h = utils\utilities.h
 		utils\zv_calculators.hpp = utils\zv_calculators.hpp
 	EndProjectSection
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zv-rates", "zv-rates\zv-rates.vcxproj", "{0971A44E-16DC-4CF9-9906-C563899ED8EA}"
+	ProjectSection(ProjectDependencies) = postProject
+		{C9BE69DB-0B96-4DB0-9302-D7F7628126BD} = {C9BE69DB-0B96-4DB0-9302-D7F7628126BD}
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "common", "common", "{F55A64C0-EC19-4DC5-8B98-800165FC0225}"
+	ProjectSection(SolutionItems) = preProject
+		common\json-obj-serialization.hpp = common\json-obj-serialization.hpp
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "shared", "shared\shared.vcxproj", "{C9BE69DB-0B96-4DB0-9302-D7F7628126BD}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
-		Debug|x86 = Debug|x86
 		Release|x64 = Release|x64
-		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Debug|x64.ActiveCfg = Debug|x64
 		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Debug|x64.Build.0 = Debug|x64
-		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Debug|x86.ActiveCfg = Debug|Win32
-		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Debug|x86.Build.0 = Debug|Win32
 		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Release|x64.ActiveCfg = Release|x64
 		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Release|x64.Build.0 = Release|x64
-		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Release|x86.ActiveCfg = Release|Win32
-		{C45B3CE3-91F2-4973-AA44-ED7D92AA8E6E}.Release|x86.Build.0 = Release|Win32
 		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Debug|x64.ActiveCfg = Debug|x64
 		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Debug|x64.Build.0 = Debug|x64
-		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Debug|x86.ActiveCfg = Debug|Win32
-		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Debug|x86.Build.0 = Debug|Win32
 		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Release|x64.ActiveCfg = Release|x64
 		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Release|x64.Build.0 = Release|x64
-		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Release|x86.ActiveCfg = Release|Win32
-		{BBFF8CD5-3CF0-4F86-9D04-2CEB89DD4FCE}.Release|x86.Build.0 = Release|Win32
+		{0971A44E-16DC-4CF9-9906-C563899ED8EA}.Debug|x64.ActiveCfg = Debug|x64
+		{0971A44E-16DC-4CF9-9906-C563899ED8EA}.Debug|x64.Build.0 = Debug|x64
+		{0971A44E-16DC-4CF9-9906-C563899ED8EA}.Release|x64.ActiveCfg = Release|x64
+		{0971A44E-16DC-4CF9-9906-C563899ED8EA}.Release|x64.Build.0 = Release|x64
+		{C9BE69DB-0B96-4DB0-9302-D7F7628126BD}.Debug|x64.ActiveCfg = Debug|x64
+		{C9BE69DB-0B96-4DB0-9302-D7F7628126BD}.Debug|x64.Build.0 = Debug|x64
+		{C9BE69DB-0B96-4DB0-9302-D7F7628126BD}.Release|x64.ActiveCfg = Release|x64
+		{C9BE69DB-0B96-4DB0-9302-D7F7628126BD}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

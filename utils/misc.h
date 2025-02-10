@@ -1,10 +1,24 @@
+/*
+ Copyright (C) 2022 QLHWrapper
+
+ This file is part of QLHWrapper, a free-software/open-source library
+ for financial quantitative analysts and developers
+
+ QLHWrapper is free software: you can redistribute it and/or modify it
+ under the terms of the The 2-Clause BSD License license - https://opensource.org/licenses/BSD-2-Clause.
+
+ This program is distributed in the hope that it will be useful, but WITHOUT
+ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE.  See the license for more details.
+*/
+
 #pragma once
 
 #include <ql/quantlib.hpp>
-#include <utils/types.h>
+#include <utils/string-io-types.hpp>
 #include <boost/lexical_cast.hpp>
 #include <utils/console.hpp>
-#include <utils/string.h>
+#include <utils/string.hpp>
 #include <fstream>
 #include <sstream>
 #include <ostream>
@@ -105,6 +119,7 @@ namespace utils {
         return go(silent);
     }
 
+    // input_arg is either a string literal, "@filePath", or "@-" (cin piped in)
     template<typename _Elem>
     string_type<_Elem> get_input_content(const string_type<_Elem>& input_arg) {
         utf8_wstring_converter<_Elem> utf8_converter;
@@ -143,6 +158,20 @@ namespace utils {
                     }
                 }
             }
+        }
+        return ret;
+    }
+
+    // input_arg is either file path or "@-" (cin piped in)
+    template<typename _Elem>
+    string_type<_Elem> get_input_text(const string_type<_Elem>& input_arg) {
+        using string_type = string_type<_Elem>;
+        using console = console<_Elem>;
+        using TextStreamReader = TextFileReader<_Elem>;
+        string_type ret;
+        if (!input_arg.empty()) {
+            auto cin_piped_in = (input_arg.length() == 2 && input_arg == "@-");
+            ret = (cin_piped_in ? TextStreamReader::readAsString(console().cin()) : TextStreamReader::readAsString(input_arg));
         }
         return ret;
     }

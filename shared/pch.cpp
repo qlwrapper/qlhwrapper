@@ -12,13 +12,4 @@
  FOR A PARTICULAR PURPOSE.  See the license for more details.
 */
 
-#pragma once
-
-namespace utils {
-    enum ModelType {
-        HullWhite1F = 0,
-        GeneralizedHullWhite1F = 1,
-        GeneralizedHullWhiteLogNormal1F = 2,
-        G2 = 3,
-    };
-}
+#include <pch.h>

@@ -1,8 +1,23 @@
+/*
+ Copyright (C) 2022 QLHWrapper
+
+ This file is part of QLHWrapper, a free-software/open-source library
+ for financial quantitative analysts and developers
+
+ QLHWrapper is free software: you can redistribute it and/or modify it
+ under the terms of the The 2-Clause BSD License license - https://opensource.org/licenses/BSD-2-Clause.
+
+ This program is distributed in the hope that it will be useful, but WITHOUT
+ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE.  See the license for more details.
+*/
+
 #pragma once
 
 #include <ql/quantlib.hpp>
 #include <vector>
 #include <cmath>
+#include <functional>
 #include <utils/hull_white_params.hpp>
 
 namespace utils {
@@ -25,7 +40,7 @@ namespace utils {
                 const QuantLib::Real dx,
                 const QuantLib::Real discountBondPrice,
                 const QuantLib::ext::shared_ptr<QuantLib::OneFactorModel::ShortRateTree>& tree,
-                QuantLib::ext::function<QuantLib::Real(QuantLib::Real)> fInv)
+                std::function<QuantLib::Real(QuantLib::Real)> fInv)
                 : size_(tree->size(i)), dt_(tree->timeGrid().dt(i)), xMin_(xMin), dx_(dx),
                 statePrices_(tree->statePrices(i)), discountBondPrice_(discountBondPrice),
                 fInverse_(std::move(fInv)) {}
@@ -47,7 +62,7 @@ namespace utils {
             QuantLib::Real xMin_, dx_;
             const QuantLib::Array& statePrices_;
             QuantLib::Real discountBondPrice_;
-            QuantLib::ext::function<QuantLib::Real(QuantLib::Real)> fInverse_;
+            std::function<QuantLib::Real(QuantLib::Real)> fInverse_;
         };
 
     public:

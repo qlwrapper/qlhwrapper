@@ -14,11 +14,25 @@
 
 #pragma once
 
-namespace utils {
-    enum ModelType {
-        HullWhite1F = 0,
-        GeneralizedHullWhite1F = 1,
-        GeneralizedHullWhiteLogNormal1F = 2,
-        G2 = 3,
-    };
-}
+#ifdef _M_X64
+#  define SHARED_LIB_PLATFORM "-x64"
+#else
+#  define SHARED_LIB_PLATFORM "-x86"
+#endif
+
+#ifdef _DEBUG
+#  define SHARED_LIB_CONFIGURATION "-Debug"
+#else
+#  define SHARED_LIB_CONFIGURATION "-Release"
+#endif
+
+#define SHARED_LIB_NAME "shared" SHARED_LIB_PLATFORM SHARED_LIB_CONFIGURATION ".lib"
+
+#pragma comment(lib, SHARED_LIB_NAME)
+#ifdef BOOST_LIB_DIAGNOSTIC
+#  pragma message("Will (need to) link to lib file: " SHARED_LIB_NAME)
+#endif
+
+#undef SHARED_LIB_PLATFORM
+#undef SHARED_LIB_CONFIGURATION
+#undef SHARED_LIB_NAME
