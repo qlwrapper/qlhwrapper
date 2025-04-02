@@ -20,8 +20,8 @@
 namespace utils {
     // swap traits for ATMSwaptionHelperFactory
     template <
-        typename SWAP_INDEX,
-        typename IBOR_INDEX
+        typename SWAP_INDEX,    // swap index
+        typename IBOR_INDEX     // floating leg ibor index
     >
     struct SwaptionHelperSwapTraits {
         typedef typename IBOR_INDEX IborIndexType;
@@ -49,15 +49,17 @@ namespace utils {
     template <
         typename HelperSwapTraits
     >
-    struct ATMSwaptionHelperFactory {
+    struct SwaptionHelperFactory {
         typedef typename HelperSwapTraits::IborIndexType IborIndexType;
         // swaption helper factoring operator
         QuantLib::ext::shared_ptr<QuantLib::SwaptionHelper> operator ()(
-            QuantLib::Handle<QuantLib::Quote>& quoteVol,    // quoted ATM volality
-            const QuantLib::Period& expiry, // expiry of the quoted ATM volality
-            const QuantLib::Period& tenor,  // tenor of the quoted ATM volality
+            QuantLib::Handle<QuantLib::Quote>& quoteVol,    // quoted volality
+            const QuantLib::Period& expiry, // expiry of the quoted volality
+            const QuantLib::Period& tenor,  // tenor of the quoted volality
             const QuantLib::Handle<QuantLib::YieldTermStructure>& termStructure,    // term structure used to estimate ibor index and discounting cashflows
-            QuantLib::VolatilityType quoteVolType = QuantLib::VolatilityType::ShiftedLognormal  // volality type of the quoted ATM volality (ShiftedLognormal or Normal)
+            QuantLib::VolatilityType quoteVolType = QuantLib::VolatilityType::ShiftedLognormal,  // volality type of the quoted volality (ShiftedLognormal or Normal)
+            QuantLib::Real shift = 0.,
+            QuantLib::Real strike = QuantLib::Null<QuantLib::Real>()
         ) const {
             HelperSwapTraits swapTraits;
             QuantLib::ext::shared_ptr<QuantLib::IborIndex> index(new IborIndexType(termStructure)); // use the same term structure to estimate the ibor index
@@ -71,10 +73,10 @@ namespace utils {
                 index->dayCounter(),  // floatingLegDayCounter
                 termStructure,  // termStructure
                 QuantLib::BlackCalibrationHelper::RelativePriceError,  // errorType
-                QuantLib::Null<QuantLib::Real>(),   // strike, Null<Real>() mean ATM, and quoteVol is ATM vol
+                strike,   // strike, Null<Real>() mean ATM, and quoteVol is ATM vol
                 1.,  // nominal
                 quoteVolType,    //  type
-                0.,  // shift
+                shift,  // shift
                 swapTraits.settlementDays(tenor)    // settlementDays
             ));
             return helper;
@@ -86,16 +88,48 @@ namespace utils {
             const QuantLib::Handle<QuantLib::YieldTermStructure>& termStructure    // term structure used to estimate ibor index and discounting cashflows
         ) const {
             QuantLib::Handle<QuantLib::Quote> quoteHandle(QuantLib::ext::shared_ptr<QuantLib::Quote>(new QuantLib::SimpleQuote(0.)));
-            auto pSwaptionHelper = this->operator()(quoteHandle, forward, tenor, termStructure, QuantLib::VolatilityType::ShiftedLognormal);
+            auto pSwaptionHelper = this->operator()(
+                quoteHandle,
+                forward,
+                tenor,
+                termStructure,
+                QuantLib::VolatilityType::ShiftedLognormal, // volType
+                0., // shift
+                QuantLib::Null<QuantLib::Real>()    // strike @ATM
+            );
             auto pSwap = pSwaptionHelper->underlying();
             return pSwap;
         }
+        QuantLib::Rate atmRate(
+            const QuantLib::Period& forward, // forward period of the swap
+            const QuantLib::Period& tenor,  // tenor of the swap
+            const QuantLib::Handle<QuantLib::YieldTermStructure>& termStructure    // term structure used to estimate ibor index and discounting cashflows
+        ) const {
+            auto swap = this->operator()(
+                forward,
+                tenor,
+                termStructure
+            );
+            auto fairRate = swap->fairRate();
+            return fairRate;
+        }
     };
 
-    typedef SwaptionHelperSwapTraits<QuantLib::UsdLiborSwapIsdaFixAm, QuantLib::USDLibor3M> USDLibor3MSwapTraits;
-    typedef ATMSwaptionHelperFactory<USDLibor3MSwapTraits> USDLibor3MATMSwaptionHelperFactory;
+    // legacy usd libor 3m swaption
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    typedef SwaptionHelperSwapTraits<
+        QuantLib::UsdLiborSwapIsdaFixAm,    // SWAP_INDEX
+        QuantLib::USDLibor3M                // IBOR_INDEX
+    > USDLibor3MSwapTraits;
+    typedef SwaptionHelperFactory<USDLibor3MSwapTraits> USDLibor3MSwaptionHelperFactory;
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    typedef SwaptionHelperSwapTraits<QuantLib::UsdFwdOISVanillaSwapIndex<QuantLib::Sofr>, QuantLib::UsdOvernightCompoundedAverageIndex<QuantLib::Sofr>> USDSofrSwapTraits;
-    //typedef SwaptionHelperSwapTraits<QuantLib::UsdOvernightIndexedSwapIsdaFix<QuantLib::Sofr>, QuantLib::Sofr> USDSofrSwapTraits;
-    typedef ATMSwaptionHelperFactory<USDSofrSwapTraits> USDSofrATMSwaptionHelperFactory;
+    // usd sofr swaption with annual cashflow exchange
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    typedef SwaptionHelperSwapTraits<
+        QuantLib::UsdFwdOISVanillaSwapIndex<QuantLib::Sofr, QuantLib::Frequency::Annual>,           // SWAP_INDEX
+        QuantLib::UsdOvernightCompoundedAverageIndex<QuantLib::Sofr, QuantLib::Frequency::Annual>   // IBOR_INDEX
+    > USDSofrSwapTraits;
+    typedef SwaptionHelperFactory<USDSofrSwapTraits> USDSofrSwaptionHelperFactory;
+    /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }

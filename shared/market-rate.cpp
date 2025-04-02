@@ -104,8 +104,8 @@ namespace {
         }
         return pTS;
     }
-    void assertValidQuotedVols(
-        const pQuotedVols& pVols
+    void assertValidQuotedSwaptionVols(
+        const pQuotedSwaptionVols& pVols
     ) {
         QL_REQUIRE(pVols != nullptr && !pVols->empty(), "quoted vols object is null or empty");
         const auto& vols = *pVols;
@@ -187,13 +187,13 @@ namespace utils {
         return pYieldCurve;
     }
 
-    pQuotedVols MarketRate::readQuotedVols(
+    pQuotedSwaptionVols MarketRate::readQuotedSwaptionVols(
         const string& inputArg
     ) {
         auto ptree = loadTreeFromJSONInput(inputArg);
-        pQuotedVols pVols;
+        pQuotedSwaptionVols pVols;
         pVols << ptree;
-        assertValidQuotedVols(pVols);
+        assertValidQuotedSwaptionVols(pVols);
         return pVols;
     }
 }

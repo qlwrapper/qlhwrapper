@@ -224,23 +224,23 @@ static std::shared_ptr<ShortRateCalibrationProcess> createShortRateCalibrationPr
     return process;
 }
 
-static void verifyATMStrikeForQuotedVols(
+static void verifySwaptionATMStrikes(
     ostream& os,
     const Handle<YieldTermStructure>& hTS,
     const Handle<YieldTermStructure>& hTSAct365F,
     bool isSofr,
-    const QuotedVols& quotedVols
+    const QuotedSwaptionVols& quotedVols
 ) {
     QL_ASSERT(!quotedVols.empty(), "quoted vols object cannot be empty");
-    vector<OptionAttribs> v_optAttibutes;
-    v_optAttibutes.push_back(OptionAttribs(0 * Months, quotedVols[0]->tenor));    // added spot a swap
+    vector<SwaptionAttribs> v_optAttibutes;
+    v_optAttibutes.push_back(SwaptionAttribs(0 * Months, quotedVols[0]->tenor));    // added spot a swap
     auto n = quotedVols.size();
     for (decltype(n) i = 0; i < n; ++i) {
-        const OptionAttribs& optionAttribs = *(quotedVols[i]);
+        const SwaptionAttribs& optionAttribs = *(quotedVols[i]);
         v_optAttibutes.push_back(optionAttribs);
     }
     n = v_optAttibutes.size();
-    os << "ATM strikes (30/360 vs Act/365F):" << endl;
+    os << "Swaption ATM strikes (30/360 vs Act/365F):" << endl;
     os << "=============================================================================================" << endl;
     for (decltype(n) i = 0; i < n; ++i) {
         const auto& optionAttribs = v_optAttibutes[i];
@@ -251,7 +251,7 @@ static void verifyATMStrikeForQuotedVols(
         auto swapAct365F = ShortRateBlackCalibration::makeFwdSwap(isSofr, forward, tenor, hTSAct365F);
         auto strikeAct365F = swapAct365F->fairRate();
         os << optionAttribs;
-        os << " [" << DateFormat<char>::to_yyyymmdd(swap->startDate()) << "," << DateFormat<char>::to_yyyymmdd(swap->maturityDate()) << "]";
+        os << " [" << DateFormat<char>::to_yyyymmdd(swap->startDate()) << "," << DateFormat<char>::to_yyyymmdd(swap->maturityDate()) << ")";
         os << " ==> " << "30/360=" << io::percent(strike) << " vs Act/365F=" << io::percent(strikeAct365F);
         os << ", diff=" << io::basis_point(strike - strikeAct365F);
         os << endl;
@@ -315,7 +315,7 @@ int main(int argc, char* argv[], char* envp[]) {
         
         Settings::instance().evaluationDate() = evalDate;
 
-        auto pQuotedVols = MarketRate::readQuotedVols(s_vols);
+        auto pQuotedVols = MarketRate::readQuotedSwaptionVols(s_vols);
         const auto& quotedVols = *pQuotedVols;
         os << endl;
         os << "quoted vols input:" << endl;
@@ -329,7 +329,7 @@ int main(int argc, char* argv[], char* envp[]) {
         Handle<YieldTermStructure> hTSAct365F(pYieldCurveAct365F);
 
         os << endl;
-        verifyATMStrikeForQuotedVols(os, hTS, hTSAct365F, isSofr, quotedVols);
+        verifySwaptionATMStrikes(os, hTS, hTSAct365F, isSofr, quotedVols);
 
         ShortRateBlackCalibration shortRateCalibration(os, pQuotedVols, hTS);
         auto calibrationProcess = createShortRateCalibrationProcess(modelType, meanReversionFixed);

@@ -18,46 +18,71 @@
 #include <vector>
 #include <memory>
 #include <exception>
+#include <sstream>
+#include <string>
 
 namespace utils {
     struct OptionAttribs {
         QuantLib::Period expiry;
-        QuantLib::Period tenor;
         OptionAttribs(
+            const QuantLib::Period& expiry = QuantLib::Period()
+        ) : expiry(expiry)
+        {}
+        virtual std::string toString() const {
+            return (std::ostringstream() << expiry).str();
+        }
+    };
+
+    struct SwaptionAttribs : public OptionAttribs {
+        QuantLib::Period tenor; // swap tenor
+        SwaptionAttribs(
             const QuantLib::Period& expiry = QuantLib::Period(),
             const QuantLib::Period& tenor = QuantLib::Period()
-        ): expiry(expiry), tenor(tenor) {}
+        ): OptionAttribs(expiry), tenor(tenor)
+        {}
+        std::string toString() const {
+            return (std::ostringstream() << expiry << "x" << tenor).str();
+        }
     };
 
-    template <
-        typename DT = QuantLib::Volatility
-    >
-    struct BlackVolData_T {
-        typedef DT DataType;
-        DataType data;                      // volatility/sigma
+    typedef QuantLib::Real Skew;    // strike - forward (K - F)
+
+    struct VolatilityData {
+        QuantLib::Volatility vol;          // volatility/sigma
         QuantLib::VolatilityType volType;   // volatility type
-        BlackVolData_T(
-            DataType data = 0,
-            QuantLib::VolatilityType volType = QuantLib::VolatilityType::ShiftedLognormal
-        ) : data(data), volType(volType) {}
+        QuantLib::Real shift;
+        Skew skew;                          // strike - forward (K - F)
+        VolatilityData(
+            QuantLib::Volatility vol = 0.,
+            QuantLib::VolatilityType volType = QuantLib::VolatilityType::ShiftedLognormal,
+            QuantLib::Real shift = 0.,
+            Skew skew = 0.
+        ) : vol(vol), volType(volType), shift(shift), skew(skew)
+        {}
+        bool hasLognormalShift() const {
+            return (volType == QuantLib::VolatilityType::ShiftedLognormal && shift != 0.);
+        }
+        bool isATM() const {
+            return (skew == 0.);
+        }
+        bool isSkewed() const {
+            return (skew != 0.);
+        }
     };
 
-    typedef BlackVolData_T<QuantLib::Volatility> BlackVolData;
-
-    template <
-        typename DT = QuantLib::Volatility
-    >
-    struct OptionVolData :
-        public OptionAttribs,
-        public BlackVolData_T<DT> {
-        OptionVolData(
-            typename BlackVolData_T<DT>::DataType data = 0,
-            QuantLib::VolatilityType volType = QuantLib::VolatilityType::ShiftedLognormal
-        ) : BlackVolData_T<DT>(data, volType) {}
+    struct QuotedSwaptionVol :
+        public SwaptionAttribs,
+        public VolatilityData {
+        QuotedSwaptionVol(
+            QuantLib::Volatility vol = 0.,
+            QuantLib::VolatilityType volType = QuantLib::VolatilityType::ShiftedLognormal,
+            QuantLib::Real shift = 0.,
+            Skew skew = 0.
+        ) : VolatilityData(vol, volType, shift, skew)
+        {}
     };
 
-    typedef OptionVolData<QuantLib::Volatility> QuotedVol;
-    typedef std::shared_ptr<QuotedVol> pQuotedVol;
-    typedef std::vector<pQuotedVol> QuotedVols;
-    typedef std::shared_ptr<QuotedVols> pQuotedVols;
+    typedef std::shared_ptr<QuotedSwaptionVol> pQuotedSwaptionVol;
+    typedef std::vector<pQuotedSwaptionVol> QuotedSwaptionVols;
+    typedef std::shared_ptr<QuotedSwaptionVols> pQuotedSwaptionVols;
 }

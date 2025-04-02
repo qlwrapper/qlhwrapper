@@ -45,9 +45,9 @@ namespace boost {
     }
 }
 
-std::ostream& operator << (std::ostream&, const utils::OptionAttribs&);
-std::ostream& operator << (std::ostream&, const utils::BlackVolData&);
-std::ostream& operator << (std::ostream&, const utils::QuotedVol&);
-utils::QuotedVol& operator << (utils::QuotedVol&, const boost::property_tree::ptree&);
+std::ostream& operator << (std::ostream&, const utils::SwaptionAttribs&);
+std::ostream& operator << (std::ostream&, const utils::VolatilityData&);
+std::ostream& operator << (std::ostream&, const utils::QuotedSwaptionVol&);
+utils::QuotedSwaptionVol& operator << (utils::QuotedSwaptionVol&, const boost::property_tree::ptree&);
 QLUtils::TermStructureNode<>& operator << (QLUtils::TermStructureNode<>&, const boost::property_tree::ptree&);
 QLUtils::TermStructureNodes<>& operator << (QLUtils::TermStructureNodes<>&, const boost::property_tree::ptree&);

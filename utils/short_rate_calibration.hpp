@@ -92,7 +92,7 @@ namespace utils {
     protected:
         std::ostream& ostream_;
         // input of the calibration
-        pQuotedVols pQuotedVols_;   // quoted vol data
+        pQuotedSwaptionVols pQuotedVols_;   // quoted vol data
         QuantLib::Handle<QuantLib::YieldTermStructure> yieldtermStructure_;
         // output of the calibration
         std::shared_ptr<CalibrationHelpers> helpers_;   // Black calibration helpers
@@ -101,7 +101,7 @@ namespace utils {
     public:
         ShortRateBlackCalibration(
             std::ostream& ostream,
-            const pQuotedVols& pQuotedVols,
+            const pQuotedSwaptionVols& pQuotedVols,
             const QuantLib::Handle<QuantLib::YieldTermStructure>& yieldtermStructure
         ) : 
             ostream_(ostream),
@@ -111,7 +111,7 @@ namespace utils {
         std::ostream& ostream() {
             return ostream_;
         }
-        const QuotedVols& quotedVols() const {
+        const QuotedSwaptionVols& quotedVols() const {
             QL_ASSERT(pQuotedVols_ != nullptr, "quoted volalities object is null");
             return *pQuotedVols_;
         }
@@ -131,7 +131,7 @@ namespace utils {
             typename HELPER_FACTORY
         >
         static std::shared_ptr<CalibrationHelpers> createHelpers(
-            const QuotedVols& quotedVols,
+            const QuotedSwaptionVols& quotedVols,
             const QuantLib::Handle<QuantLib::YieldTermStructure>& yieldtermStructure
         ) {
             std::shared_ptr<CalibrationHelpers> helpers(new CalibrationHelpers());
@@ -141,8 +141,25 @@ namespace utils {
                 try {
                     const auto& pQuote = quotedVols[i];
                     QL_ASSERT(pQuote != nullptr, "quoted vol is null");
-                    QuantLib::Handle<QuantLib::Quote> quoteHandle(QuantLib::ext::shared_ptr<QuantLib::Quote>(new QuantLib::SimpleQuote(pQuote->data)));
-                    auto helper = helperFactory(quoteHandle, pQuote->expiry, pQuote->tenor, yieldtermStructure, pQuote->volType);
+                    QuantLib::Handle<QuantLib::Quote> quoteHandle(QuantLib::ext::shared_ptr<QuantLib::Quote>(new QuantLib::SimpleQuote(pQuote->vol)));
+                    QuantLib::Real strike = QuantLib::Null<QuantLib::Real>();
+                    if (pQuote->isSkewed()) {
+                        auto atmRate = helperFactory.atmRate(
+                            pQuote->expiry,
+                            pQuote->tenor,
+                            yieldtermStructure
+                        );
+                        strike = atmRate + pQuote->skew;
+                    }
+                    auto helper = helperFactory(
+                        quoteHandle,
+                        pQuote->expiry,
+                        pQuote->tenor,
+                        yieldtermStructure,
+                        pQuote->volType,
+                        pQuote->shift,
+                        strike
+                    );
                     helpers->push_back(helper);
                 }
                 catch (const std::exception& e) {
@@ -153,13 +170,13 @@ namespace utils {
         }
         static std::shared_ptr<CalibrationHelpers> createHelpers(
             bool isSofr,
-            const QuotedVols& quotedVols,
+            const QuotedSwaptionVols& quotedVols,
             const QuantLib::Handle<QuantLib::YieldTermStructure>& yieldtermStructure
         ) {
             return (
                 isSofr
-                ? createHelpers<USDSofrATMSwaptionHelperFactory>(quotedVols, yieldtermStructure)
-                : createHelpers<USDLibor3MATMSwaptionHelperFactory>(quotedVols, yieldtermStructure)
+                ? createHelpers<USDSofrSwaptionHelperFactory>(quotedVols, yieldtermStructure)
+                : createHelpers<USDLibor3MSwaptionHelperFactory>(quotedVols, yieldtermStructure)
                 );
         }
         template <
@@ -181,8 +198,8 @@ namespace utils {
         ) {
             return (
                 isSofr
-                ? makeFwdSwap<USDSofrATMSwaptionHelperFactory>(forward, tenor, yieldtermStructure)
-                : makeFwdSwap<USDLibor3MATMSwaptionHelperFactory>(forward, tenor, yieldtermStructure)
+                ? makeFwdSwap<USDSofrSwaptionHelperFactory>(forward, tenor, yieldtermStructure)
+                : makeFwdSwap<USDLibor3MSwaptionHelperFactory>(forward, tenor, yieldtermStructure)
                 );
         }
     protected:
@@ -200,7 +217,7 @@ namespace utils {
             std::ostream& os,
             const QuantLib::ext::shared_ptr<QuantLib::PricingEngine>& engine,
             const CalibrationHelpers& calibrationHelpers,
-            const QuotedVols& quotedVols
+            const QuotedSwaptionVols& quotedVols
         ) {
             QL_ASSERT(calibrationHelpers.size() == quotedVols.size(), "calibration verification data size mis-matched");
             auto n = calibrationHelpers.size();
@@ -210,21 +227,21 @@ namespace utils {
                 const auto& pQuote = quotedVols[i];
                 const auto& volData = *pQuote;
                 const auto& helper = calibrationHelpers[i];
-                const auto& marketVol = volData.data;
+                const auto& marketVol = volData.vol;
                 const auto& volType = volData.volType;
-                //auto marketBlackNVP = helper->blackPrice(marketVol);
-                //os << marketBlackNVP << endl;
+                const auto& shift = volData.shift;
+                const auto& skew = volData.skew;
                 helper->setPricingEngine(engine);
                 auto modelNVP = helper->modelValue();
                 //os << modelNVP << endl;
                 auto modelImpliedVol = helper->impliedVolatility(modelNVP, 1e-16, 10000, 0.00001, 1.0);
                 auto diffVol = modelImpliedVol - marketVol;
-                os << ((const OptionAttribs&)volData);
+                os << ((const OptionAttribs&)volData).toString();
                 os << std::setprecision(5) << std::noshowpos;
                 os << ", " << "model npv=" << std::setw(7) << modelNVP;
-                os << ", " << "model implied vol=" << std::setw(7) << BlackVolData{modelImpliedVol, volType};
-                os << ", " << "market vol=" << std::setw(7) << ((const BlackVolData&)volData);
-                os << ", " << "diff=" << std::setw(7) << std::showpos << BlackVolData{diffVol, volType} << std::noshowpos << ")";
+                os << ", " << "model implied vol=" << std::setw(7) << VolatilityData{modelImpliedVol, volType, shift, skew };
+                os << ", " << "market vol=" << std::setw(7) << ((const VolatilityData&)volData);
+                os << ", " << "diff=" << std::setw(7) << std::showpos << VolatilityData{diffVol, volType, shift, skew } << std::noshowpos << ")";
                 os << std::endl;
             }
             os << "******************************************************************************************" << std::endl;
@@ -262,8 +279,8 @@ namespace utils {
         ) {
             return (
                 isSofr
-                ? calibrate<USDSofrATMSwaptionHelperFactory>(calibrationProcess, calibrationGridFactory)
-                : calibrate<USDLibor3MATMSwaptionHelperFactory>(calibrationProcess, calibrationGridFactory)
+                ? calibrate<USDSofrSwaptionHelperFactory>(calibrationProcess, calibrationGridFactory)
+                : calibrate<USDLibor3MSwaptionHelperFactory>(calibrationProcess, calibrationGridFactory)
                 );
         }
     };

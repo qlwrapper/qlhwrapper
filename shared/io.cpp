@@ -30,59 +30,87 @@ using namespace boost;
 
 ostream& operator << (
     ostream& os,
-    const OptionAttribs& rhs
+    const SwaptionAttribs& rhs
 ) {
-    return (os << rhs.expiry << "x" << rhs.tenor);
+    return (os << rhs.toString());
 }
 
 ostream& operator << (
     ostream& os,
-    const BlackVolData& rhs
+    const VolatilityData& rhs
 ) {
-    if (rhs.volType == QuantLib::VolatilityType::ShiftedLognormal) {
-        os << QuantLib::io::volatility(rhs.data);
+    if (rhs.volType == VolatilityType::ShiftedLognormal) {
+        os << io::volatility(rhs.vol);
     }
-    else if (rhs.volType == QuantLib::VolatilityType::Normal) {
-        os << QuantLib::io::normal_volatility(rhs.data);
+    else if (rhs.volType == VolatilityType::Normal) {
+        os << io::normal_volatility(rhs.vol);
     }
     else {
         QL_FAIL("unknown/unsupported volality type (" << (int)(rhs.volType) << ")");
+    }
+    auto hasLognormalShift = rhs.hasLognormalShift();
+    auto isSkewed = rhs.isSkewed();
+    auto hasExtraInfo = (hasLognormalShift || isSkewed);
+    if (hasExtraInfo) {
+        os << "(";
+        if (hasLognormalShift) {
+            os << "shift=" << io::basis_point(rhs.shift);
+        }
+        if (isSkewed) {
+            if (hasLognormalShift) {
+                os << ", ";
+            }
+            os << "skew=" << io::basis_point(rhs.skew);
+        }
+        os << ")";
     }
     return os;
 }
 
 ostream& operator << (
     ostream& os,
-    const QuotedVol& rhs
+    const QuotedSwaptionVol& rhs
 ) {
-    return (os << ((const OptionAttribs&)rhs) << " = " << ((const BlackVolData&)rhs));
+    return (os << ((const SwaptionAttribs&)rhs) << " = " << ((const VolatilityData&)rhs));
 }
 
-QuotedVol& operator << (
-    QuotedVol& dest,
+QuotedSwaptionVol& operator << (
+    QuotedSwaptionVol& dest,
     const property_tree::ptree& ptree
 ) {
-    QuantLib::Real volConversionFactor = 1.;
+    Real volConversionFactor = 1.;
     auto op = ptree.get_child_optional("expiry");
     if (op) {
-        auto s = op.value().get_value<std::string>();
-        dest.expiry = lexical_cast<QuantLib::Period>(s);
+        auto s = op.value().get_value<string>();
+        dest.expiry = lexical_cast<Period>(s);
     }
     op = ptree.get_child_optional("tenor");
     if (op) {
-        auto s = op.value().get_value<std::string>();
-        dest.tenor = lexical_cast<QuantLib::Period>(s);
+        auto s = op.value().get_value<string>();
+        dest.tenor = lexical_cast<Period>(s);
     }
     op = ptree.get_child_optional("isNormalVol");
     if (op) {
         auto isNormalVol = op.value().get_value<bool>();
-        dest.volType = (isNormalVol ? QuantLib::VolatilityType::Normal : QuantLib::VolatilityType::ShiftedLognormal);
+        dest.volType = (isNormalVol ? VolatilityType::Normal : VolatilityType::ShiftedLognormal);
         volConversionFactor = (isNormalVol ? 0.0001 : 0.01);   // conversion factor to convert volality to decimal unit
     }
     op = ptree.get_child_optional("value");
     if (op) {
-        dest.data = op.value().get_value<QuantLib::Volatility>();
-        dest.data *= volConversionFactor;   // convert to decimal
+        dest.vol = op.value().get_value<Volatility>();
+        dest.vol *= volConversionFactor;   // convert to decimal
+    }
+    if (dest.volType == VolatilityType::ShiftedLognormal) {
+        op = ptree.get_child_optional("shift");
+        if (op) {
+            dest.shift = op.value().get_value<Real>();
+            dest.shift /= 10000.;   // convert from basis point to decimal
+        }
+    }
+    op = ptree.get_child_optional("skew");
+    if (op) {
+        dest.skew = op.value().get_value<Real>();
+        dest.skew /= 10000.;   // convert from basis point to decimal
     }
     return dest;
 }

@@ -56,7 +56,7 @@ namespace utils {
             bool enableExtrapolation = true
         );
 
-        static pQuotedVols readQuotedVols(
+        static pQuotedSwaptionVols readQuotedSwaptionVols(
             const std::string& inputArg
         );
     };
